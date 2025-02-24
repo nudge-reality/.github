@@ -7,7 +7,7 @@ jobs:
     move-to-next-iteration:
         name: Move to next iteration
         runs-on: ubuntu-latest
-    steps:
+        steps:
         - name: Generate GitHub App token
           uses: actions/create-github-app-token@v1
           id: app-token
