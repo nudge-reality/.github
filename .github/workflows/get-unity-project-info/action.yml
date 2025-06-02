@@ -1,0 +1,52 @@
+name: Extract Unity Project Info
+description: Extracts sanitized product name and version from Unity's ProjectSettings.asset
+inputs:
+  workingDirectory:
+    description: 'Path to the Unity project root'
+    required: false
+    default: '.'
+
+outputs:
+  product-name:
+    description: 'Sanitized product name'
+    value: '${{ steps.get-unity-project-info.outputs.product-name }}'
+  project-version:
+    description: 'Unity project bundle version'
+    value: '${{ steps.get-unity-project-info.outputs.project-version }}'
+  build-name:
+    description: 'Combined name: <product-name>-v<project-version>'
+    value: '${{ steps.get-unity-project-info.outputs.build-name }}'
+  unity-version:
+    description: 'Unity version'
+    value: '${{ steps.get-unity-project-info.outputs.unityVersion }}'
+
+runs:
+  using: "composite"
+  steps:
+      
+    - name: "Get project name & version"
+      id: get-unity-project-info
+      run: |
+        SETTINGS_FILE="${{ inputs.workingDirectory }}/ProjectSettings/ProjectSettings.asset"
+
+        RAW_PRODUCT_NAME=$(grep -m1 "productName:" "$SETTINGS_FILE" | cut -d ':' -f2- | xargs)
+        echo "Raw Product Name: $RAW_PRODUCT_NAME"
+        
+        PROJECT_VERSION=$(grep -m1 "bundleVersion:" "$SETTINGS_FILE" | awk '{ print $2 }')
+        echo "Project Version: $PROJECT_VERSION"
+        
+        UNITY_VERSION=$(grep 'm_EditorVersion:' ${{ inputs.workingDirectory }}/ProjectSettings/ProjectVersion.txt | awk '{ print $2 }')
+        echo "Unity Version: $UNITY_VERSION"
+        
+        SAFE_PRODUCT_NAME=$(echo "$RAW_PRODUCT_NAME" | tr -d ' /' | tr -cd '[:alnum:]_-')
+        echo "Safe Product Name: $SAFE_PRODUCT_NAME"
+        
+        BUILD_NAME="${SAFE_PRODUCT_NAME}-v${PROJECT_VERSION}"
+        echo "Build Name: $BUILD_NAME"
+
+        echo "unityVersion=$UNITY_VERSION" >> $GITHUB_OUTPUT
+        echo "product-name=$SAFE_PRODUCT_NAME" >> $GITHUB_OUTPUT
+        echo "project-version=$PROJECT_VERSION" >> $GITHUB_OUTPUT
+        echo "build-name=$BUILD_NAME" >> $GITHUB_OUTPUT
+        
+      shell: bash

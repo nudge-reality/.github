@@ -1,0 +1,104 @@
+name: Trigger Unity Cloud Build
+description: Trigger a cloud build for a Unity project and download the artifact.
+
+inputs:
+  orgID:
+    type: string
+    required: true
+  projectID:
+    type: string
+    required: true
+  buildTargetID:
+    type: string
+    required: true
+  githubToken:
+    type: string
+    required: true
+  apiKey:
+    type: string
+    required: true
+
+outputs:
+  download_url:
+    description: "URL to download the build artifact"
+    value: ${{ steps.check-build-status.outputs.download_url }}
+    
+runs:
+  using: composite
+  steps:
+    - name: Set inputs as environment variables
+      run: |
+        echo "ORG_ID=${{ inputs.orgID }}" >> $GITHUB_ENV
+        echo "PROJECT_ID=${{ inputs.projectID }}" >> $GITHUB_ENV
+        echo "BUILD_TARGET_ID=${{ inputs.buildTargetID }}" >> $GITHUB_ENV
+        echo "API_KEY=${{ inputs.apiKey }}" >> $GITHUB_ENV
+        echo "GITHUB_TOKEN=${{ inputs.githubToken }}" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Set Cloud Build Environment Variables
+      id: set-envs
+      run: |    
+        RESPONSE=$(curl -X PUT https://build-api.cloud.unity3d.com/api/v1/orgs/$ORG_ID/projects/$PROJECT_ID/buildtargets/$BUILD_TARGET_ID/envvars \
+          -H "Authorization: Bearer $API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+                "envvars": {
+                  "GITHUB_TOKEN": "'"$GITHUB_TOKEN"'"
+                }
+              }')
+        
+        echo "$RESPONSE"
+      shell: bash
+      
+    - name: Trigger Unity Cloud build
+      id: trigger-build
+      run: |
+        RESPONSE=$(curl -X POST https://build-api.cloud.unity3d.com/api/v1/orgs/$ORG_ID/projects/$PROJECT_ID/buildtargets/$BUILD_TARGET_ID/builds \
+          -H "Authorization: Bearer $API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+                "clean": false
+              }')
+        
+        if [ "$(echo "$RESPONSE" | jq 'length')" -eq 0 ]; then
+        echo "No build data returned."
+        exit 1
+        fi
+        
+        BUILD_NUMBER=$(echo "$RESPONSE" | jq -r '.[0].build')
+        echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+        echo "Build triggered with build number: $BUILD_NUMBER"
+      shell: bash
+
+    - name: Wait for build to complete
+      id: check-build-status
+      run: |
+        STATUS="queued"
+        echo "Waiting for build #$BUILD_NUMBER..."
+
+        until [[ "$STATUS" == "success" || "$STATUS" == "failure" || "$STATUS" == "canceled" ]]; do
+          sleep 60
+          RESPONSE=$(curl -s -X GET "https://build-api.cloud.unity3d.com/api/v1/orgs/$ORG_ID/projects/$PROJECT_ID/buildtargets/$BUILD_TARGET_ID/builds/$BUILD_NUMBER" \
+            -H "Authorization: Bearer $API_KEY")
+        
+          if [ "$(echo "$RESPONSE" | jq 'length')" -eq 0 ]; then
+            echo "No build status returned."
+            exit 1
+          fi
+        
+          STATUS=$(echo "$RESPONSE" | jq -r '.[0].buildStatus')
+          if [ "$STATUS" == "null" ] || [ -z "$STATUS" ]; then
+            echo "Build status is null."
+          else
+            echo "Build status: $STATUS"
+          fi
+        done
+
+        if [[ "$STATUS" != "success" ]]; then
+          echo "Build failed or was canceled."
+          exit 1
+        fi
+        
+        DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '[0].links.download_primary.href')
+        echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+      shell: bash

@@ -1,0 +1,81 @@
+name: Create Tag
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag-suffix:
+        required: true
+        type: string
+    outputs:
+      tag_created:
+        description: "True/False if the tag was created"
+        value: ${{ jobs.create-tag.outputs.tag_created }}
+      tag-name:
+        description: "The name of the created tag"
+        value: ${{ jobs.create-tag.outputs.tag-name }}
+    secrets: 
+        DEPLOYMENT_AGENT_APP_ID:
+            required: true
+        DEPLOYMENT_AGENT_PRIVATE_KEY:
+            required: true
+    
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag-name: ${{ steps.create-tag.outputs.tag-name }}
+      
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DEPLOYMENT_AGENT_APP_ID }}
+          private-key: ${{ secrets.DEPLOYMENT_AGENT_PRIVATE_KEY }}
+
+      - name: Install GitHub CLI
+        run: |
+          if ! command -v gh &> /dev/null; then
+            sudo apt-get install gh
+          fi
+
+      - name: Get GitHub App User ID
+        id: app-id
+        run: echo "app-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Check if tag already exists
+        id: tag-check
+        run: |
+          TAG="v${{ inputs.version }}${{ inputs.tag-suffix }}"
+          echo "Checking if tag $TAG already exists..."
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "✅ Tag already exists: $TAG"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Tag does not exist: $TAG"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag
+        if: steps.tag-check.outputs.tag_exists == 'false'
+        id: create-tag
+        run: |
+          git config --local user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+          git config --local user.email '${{ steps.app-id.outputs.app-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git tag v${{ inputs.version }}-${{ inputs.tag-suffix }}
+          git push origin v${{ inputs.version }}-${{ inputs.tag-suffix }}
+          
+          echo "tag-name=v${{ inputs.version }}-${{ inputs.tag-suffix }}" >> "$GITHUB_OUTPUT"
+          echo "tag_created=true" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}

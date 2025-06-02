@@ -1,0 +1,52 @@
+﻿name: Create App Release
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        required: true
+        type: string
+      project-version:
+        required: true
+        type: string
+      tag-name:
+        required: true
+        type: string
+      artifact-path:
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.app-name }}-${{ inputs.project-version }}-Android
+          path: builds/Android
+        
+      - name: Verify release artifact exists
+        id: check-artifact
+        run: |
+          if [ ! -f "${{ inputs.artifact-path }}" ]; then
+            echo "❌ Artifact not found at: ${{ inputs.artifact-path }}"
+            echo "artifact_exists=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "✅ Found artifact at: ${{ inputs.artifact-path }}"
+            echo "artifact_exists=true" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Create GitHub Release
+        if: steps.check-artifact.outputs.artifact_exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag-name }}
+          name: "${{ inputs.app-name }} v${{ inputs.project-version }}"
+          files: |
+            ${{ inputs.artifact-path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
