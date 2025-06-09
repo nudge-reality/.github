@@ -1,0 +1,19 @@
+name: 📦 Work Package
+description: A collection of Epics related to a specific package of work.
+labels: []
+type: "Work Package 📦"
+projects: ["nudge-reality/4"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please ensure the information for this Work Package is accurate to the official documentation of the project.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: By submitting this issue, you agree that the Work Package is taken directly from the project Gantt Chart or supporting documentation.
+      options:
+        - label: I agree this Work Package is taken directly from the project Gantt Chart or supporting documentation
+          required: true
