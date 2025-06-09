@@ -1,0 +1,54 @@
+name: 🎯 Epic
+description: A large body of work that is broken down into smaller user stories.
+labels: ['epic']
+type: "Epic"
+projects: ["nudge-reality/4"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!IMPORTANT]
+        > Please include as much information about this Epic as possible, referencing the original Gantt Chart or Requirements document.
+        
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Provide a detailed description of the epic.
+      placeholder: Enter the description of the epic
+    validations:
+      required: true
+
+  - type: dropdown
+    id: derived-document
+    attributes:
+      label: What document is the Epic derived from?
+      options:
+        - Requirements Document
+        - Design Document
+        - Gantt Chart
+        - Product Owner/Manager conversation
+    validations:
+      required: true
+
+  - type: input
+    id: derived-reference
+    attributes:
+      label: "Derived Document ID"
+      description: "Please include a reference (ID) to the content in the document this Epic was derived from (if relevant)"
+      placeholder: "FR-1, WP 1: Software Development etc."
+    validations:
+      required: false
+      
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the epic here.
+      placeholder: Enter any additional context or relevant information
+      value: |
+        _N/A_
+    validations:
+      required: false
