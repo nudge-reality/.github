@@ -1,0 +1,38 @@
+﻿name: Setup Unity Project
+description: Unity project Setup (Free up space & setup UPM Auth)
+
+inputs:
+  workingDirectory:
+    type: string
+    required: true
+  githubToken:
+    type: string
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Free up disk space
+      run: |
+        echo "Freeing disk space..."
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo rm -rf /opt/hostedtoolcache/Go
+        sudo rm -rf /opt/hostedtoolcache/Java_*
+        sudo rm -rf /opt/hostedtoolcache/node
+        sudo rm -rf /opt/hostedtoolcache/Python
+        sudo rm -rf ~/.cache/unity3d
+        sudo rm -rf ~/.local/share/unity3d
+      shell: bash
+  
+    - name: Create .upmconfig.toml UPM authentication file
+      run: |
+        mkdir /home/runner/work/_temp/_github_home
+        cd /home/runner/work/_temp/_github_home
+        echo "[npmAuth.\"https://npm.pkg.github.com/@nudge-reality\"]" >> .upmconfig.toml
+        echo "alwaysAuth = true" >> .upmconfig.toml
+        echo "token = \"${{ inputs.githubToken }}\"" >> .upmconfig.toml
+      shell: bash

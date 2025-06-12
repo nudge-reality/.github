@@ -1,0 +1,54 @@
+name: Unity Build Dispatch
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        required: true
+        type: string
+      project-version:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string   
+      build-mode:
+        required: true
+        type: string
+    secrets:
+      UNITY_LICENSE:
+        required: false
+      UNITY_EMAIL:
+        required: false
+      UNITY_PASSWORD:
+        required: false
+      UNITY_ORG_ID:
+        required: false
+      UNITY_PROJECT_ID:
+        required: false
+      UNITY_API_KEY:
+        required: false
+
+    outputs:
+      build-path:
+        description: 'Path of the created build'
+        value: ${{ jobs.build-unity-cloud.outputs.build-path || jobs.build-gameci.outputs.build-path }}
+
+jobs:
+  build-unity-cloud:
+    if: ${{ inputs.build-mode == 'cloud' }}
+    uses: ./.github/workflows/build-unity-app-unity-cloud.yaml
+    with:
+      app-name: ${{ inputs.app-name }}
+      project-path: ${{ inputs.project-path }}
+      project-version: ${{ inputs.project-version }}
+    secrets: inherit
+
+  build-gameci:
+    if: ${{ inputs.build-mode == 'gameci' }}
+    uses: ./.github/workflows/build-unity-app-gameci.yaml
+    with:
+      app-name: ${{ inputs.app-name }}
+      project-path: ${{ inputs.project-path }}
+      project-version: ${{ inputs.project-version }}
+    secrets: inherit

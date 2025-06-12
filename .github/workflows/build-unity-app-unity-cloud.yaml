@@ -1,0 +1,89 @@
+name: Build Unity Project (Unity Cloud)
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        required: true
+        type: string
+      project-version:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string
+    secrets:
+      UNITY_ORG_ID:
+        required: true
+      UNITY_PROJECT_ID:
+        required: true
+      UNITY_API_KEY:
+        required: true
+    outputs:
+      build-path:
+        description: 'Path of the created build'
+        value: ${{ jobs.get-build.outputs.build_path }}
+        
+        
+jobs:
+  list-build-targets:
+    name: List Build Targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.extract.outputs.targets }}
+    steps:
+      - name: Fetch build targets
+        id: extract
+        run: |
+          RESPONSE=$(curl -s -X GET "https://build-api.cloud.unity3d.com/api/v1/orgs/${{ secrets.UNITY_ORG_ID }}/projects/${{ secrets.UNITY_PROJECT_ID }}/buildtargets" \
+            -H "Authorization: Bearer ${{ secrets.UNITY_API_KEY }}")
+
+          TARGETS=$(echo "$RESPONSE" | jq -c '[.[].buildtargetid]')
+          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
+          echo "Found build targets: $TARGETS"
+
+  build:
+    name: Build Unity App (Unity DevOps)
+    needs: [ list-build-targets]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.list-build-targets.outputs.targets) }}
+
+    steps:
+      - name: Trigger Unity Cloud Build
+        id: unity-cloud-build
+        uses: ./.github/workflows/trigger-unity-cloud-build
+        with:
+          orgID: ${{ secrets.UNITY_ORG_ID }}
+          projectID: ${{ secrets.UNITY_PROJECT_ID }}
+          buildTargetID: ${{ matrix.target }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          apiKey: ${{ secrets.UNITY_API_KEY }}
+  
+  get-build:
+    name: Download & re-name build
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      build_path: ${{ steps.download-build.outputs.file_path }}
+    
+    steps:
+    - name: Download Build
+      id: download-build
+      run: |
+        url="${{ needs.build.outputs.download_url }}"
+        build_path="builds/${{ inputs.app_name }}-${{ inputs.project-version }}.apk"
+        echo "Downloading from: $url"
+        curl -f -L "$url" -o "$build_path"
+        echo "build-path=$build_path" >> "$GITHUB_OUTPUT"
+    
+  upload-artifact:
+    needs: get-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app-name }}-${{ inputs.project-version }}-${{ matrix.target }}
+          path: ${{ needs.get-build.outputs.build-path }}

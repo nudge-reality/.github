@@ -1,0 +1,64 @@
+name: Test Unity App (GameCI)
+
+on:
+  workflow_call:
+    inputs:
+      project-path:
+        required: true
+        type: string
+    secrets:
+      UNITY_LICENSE:
+        required: true
+      UNITY_EMAIL:
+        required: true
+      UNITY_PASSWORD:
+        required: true   
+jobs:
+  test:
+    name: Run Unity Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      - name: Setup Unity Project
+        id: unity-setup
+        uses: ./.github/workflows/unity-setup
+        with:
+          workingDirectory: ${{ inputs.project-path }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore Library Cache
+        uses: actions/cache/restore@v4
+        id: cache-test
+        with:
+          path: ${{ inputs.project-path }}/Library
+          key: Library-${{ runner.os }}-Test-${{ steps.unity-setup.outputs.unityVersion }}-${{ github.sha }}
+          restore-keys: |
+            Library-${{ runner.os }}-Test-${{ steps.unity-setup.outputs.unityVersion }}-
+            Library-${{ runner.os }}-Build-${{ steps.unity-setup.outputs.unityVersion }}-
+
+      - name: Run tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ inputs.project-path }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Library Folder
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ inputs.project-path }}/Library
+          key: Library-${{ runner.os }}-Test-${{ steps.unity-setup.outputs.unityVersion }}-${{ github.sha }}

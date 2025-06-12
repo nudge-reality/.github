@@ -1,0 +1,108 @@
+name: Unity App Full Release Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string
+      build-mode:
+        required: true
+        type: string
+    secrets:
+      UNITY_LICENSE:
+        required: true
+      UNITY_EMAIL:
+        required: true
+      UNITY_PASSWORD:
+        required: true
+      UNITY_ORG_ID:
+        required: false
+      UNITY_PROJECT_ID:
+        required: false
+      UNITY_API_KEY:
+        required: false
+      DEPLOYMENT_AGENT_APP_ID:
+        required: true
+      DEPLOYMENT_AGENT_PRIVATE_KEY:
+        required: true
+
+jobs:
+  get-info:
+    name: Get Unity Project Info
+    runs-on: ubuntu-latest
+    outputs:
+      build-name: ${{ steps.get-unity-project-info.outputs.build-name }}
+      product-name: ${{ steps.get-unity-project-info.outputs.product-name }}
+      project-version: ${{ steps.get-unity-project-info.outputs.project-version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get Unity project info
+        id: get-unity-project-info
+        uses: ./.github/workflows/get-unity-project-info
+        with:
+          workingDirectory: ${{inputs.project-path}}
+  
+  check-release:
+    name: Check For Existing Release
+    runs-on: ubuntu-latest
+    needs: get-info
+    steps:
+      - name: Check if release ${{ inputs.app-name }}-v${{ needs.get-info.outputs.project-version }} exists
+        id: check-release
+        run: |
+          tag="${{ inputs.app-name }}-v${{ needs.get-info.outputs.project-version }}"
+          if gh release view "$tag" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "❌ Release already exists. Exiting..."
+            exit 1
+          else
+            echo "✅ No release found for version ${{ needs.get-info.outputs.project-version }}"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  
+  test:
+    name: Test Unity App
+    needs: check-release
+    uses: ./.github/workflows/test-unity-app-gameci.yaml
+    with:
+      project-path: ${{ inputs.project-path }}
+    secrets:
+        UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+        UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+  
+  build:
+    needs: [test, get-info]
+    uses: ./.github/workflows/unity-build-dispatch.yaml
+    with:
+      app-name: ${{ inputs.app-name }}
+      project-path: ${{ inputs.project-path }}
+      project-version: ${{ needs.get-info.outputs.project-version }}
+      build-mode: ${{ inputs.build-mode }}
+    secrets: inherit
+      
+  create-tag:
+    uses: ./.github/workflows/create-tag.yaml
+    needs: [get-info, build]
+    with:
+      version: ${{ needs.get-info.outputs.project-version }}
+      tag-suffix: ${{ needs.get-info.outputs.product-name }}
+    secrets:
+      DEPLOYMENT_AGENT_APP_ID: ${{ secrets.DEPLOYMENT_AGENT_APP_ID }}
+      DEPLOYMENT_AGENT_PRIVATE_KEY: ${{ secrets.DEPLOYMENT_AGENT_PRIVATE_KEY }}
+      
+  create-release:
+    uses: ./.github/workflows/create-app-release.yaml
+    needs: [build, create-tag, get-info]
+    with:
+      app-name: ${{ inputs.app-name }}
+      tag-name: ${{ needs.create-tag.outputs.tag-name }}
+      project-version: ${{ needs.get-info.outputs.project-version }}
+      artifact-path: ${{ needs.build.outputs.build-path }}
+

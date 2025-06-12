@@ -1,0 +1,142 @@
+﻿name: Build Unity App (GameCI)
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        required: true
+        type: string
+      project-version:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string
+    secrets:
+      UNITY_LICENSE:
+        required: true
+      UNITY_EMAIL:
+        required: true
+      UNITY_PASSWORD:
+        required: true
+    outputs:
+      build-path:
+        value: ${{ jobs.build.outputs.build-path }}
+  
+jobs:
+  build:
+    name: Build Unity App
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        targetPlatform: [ Android ]
+    outputs:
+      build-path: ${{ steps.set-build-path.outputs.build-path }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      # Testing purposes, avoids creating duplicate builds.
+      - name: Restore Build Cache 
+        uses: actions/cache/restore@v4
+        id: restore-cache-build
+        with:
+          path: builds/${{ matrix.targetPlatform }}/${{ inputs.app-name }}-${{ inputs.project-version }}.apk
+          key: Build-${{ runner.os }}-${{ inputs.app-name }}-${{ inputs.project-version }}-${{ github.sha }}
+          restore-keys: |
+            Build-${{ runner.os }}-${{ inputs.app-name }}-${{ inputs.project-version }}
+
+      - name: Check if build already exists
+        id: check-apk
+        run: |
+          if [ -f "builds/${{ matrix.targetPlatform }}/${{ inputs.app-name }}-${{ inputs.project-version }}.apk" ]; then
+            echo "Existing build for version ${{ inputs.project-version }} found in ${{ steps.set-build-path.outputs.build-path }}"
+            echo "Skipping Build..."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+      - name: Setup Unity Project
+        id: unity-setup
+        if: steps.check-apk.outputs.exists != 'true'
+        uses: ./.github/workflows/unity-setup
+        with:
+          workingDirectory: ${{ inputs.project-path }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore Library Cache
+        uses: actions/cache/restore@v4
+        if: steps.check-apk.outputs.exists != 'true'
+        id: restore-cache-build
+        with:
+          path: ${{ inputs.project-path }}/Library
+          key: Library-${{ runner.os }}-Build-${{ steps.unity-setup.outputs.unityVersion }}-${{ github.sha }}
+          restore-keys: |
+            Library-${{ runner.os }}-Build-${{ steps.unity-setup.outputs.unityVersion }}-
+
+      - name: Build project
+        id: build
+        if: steps.check-apk.outputs.exists != 'true'
+        uses: game-ci/unity-builder@v4
+        env:
+            UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+            UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+            UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+            projectPath: ${{ inputs.project-path }}
+            targetPlatform: ${{ matrix.targetPlatform }}
+            allowDirtyBuild: true
+            buildsPath: builds
+            buildName: "${{ inputs.app-name }}-${{ inputs.project-version }}"
+
+      - name: Cache Library Folder
+        uses: actions/cache/save@v4
+        if: steps.check-apk.outputs.exists != 'true'
+        with:
+          path: ${{ inputs.project-path }}/Library
+          key: Library-${{ runner.os }}-Build-${{ steps.unity-setup.outputs.unityVersion }}-${{ github.sha }}
+
+      - name: Check that build exists
+        if: steps.check-apk.outputs.exists != 'true'
+        run: |
+          if [ ! -f "${{ steps.set-build-path.outputs.build-path }}" ]; then
+            echo "❌ Build not found in '${{ steps.set-build-path.outputs.build-path }}'"
+            exit 1
+          fi
+
+      - name: Set Build Data
+        id: set-build-path
+        run: |
+          BUILD_PATH="builds/${{ matrix.targetPlatform }}/${{ inputs.app-name }}-${{ inputs.project-version }}.apk"
+          APK_NAME="$(basename "$BUILD_PATH")"
+          echo "build-path=$BUILD_PATH" >> $GITHUB_OUTPUT
+          echo "apk-name=$APK_NAME" >> $GITHUB_OUTPUT
+          echo "Set build-path to: $BUILD_PATH"
+          echo "Set apk-name to: $APK_NAME"
+
+      # Testing purposes, avoids creating duplicate builds.
+      - name: Upload Build as Cache
+        uses: actions/cache/save@v4
+        if: steps.restore-cache-build.outputs.cache-hit != 'true'
+        id: cache-build
+        with:
+          path: builds/${{ matrix.targetPlatform }}/${{ inputs.app-name }}-${{ inputs.project-version }}.apk
+          key: Build-${{ runner.os }}-${{ inputs.app-name }}-${{ inputs.project-version }}-${{ github.sha }}
+          
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app-name }}-${{ inputs.project-version }}-${{ matrix.targetPlatform }}
+          path: ${{ steps.set-build-path.outputs.build-path }}
+    
